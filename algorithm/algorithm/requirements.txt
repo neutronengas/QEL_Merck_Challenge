@@ -1,0 +1,4 @@
+RUN pip install numpy==1.21.2
+RUN pip install qiskit==0.34.2
+RUN pip install qiskit_aer==0.10.1
+RUN pip install scipy==1.7.3

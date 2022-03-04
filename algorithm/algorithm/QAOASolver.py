@@ -1,6 +1,10 @@
-#!/usr/bin/env python
+"""#!/usr/bin/env python3"""
 # coding: utf-8
 
+# The following approach is taken from the paper https://doi.org/10.48550/arXiv.2108.08805
+# All credit goes to the authors of this paper
+
+from venv import create
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister, transpile
 from qiskit import BasicAer
@@ -10,13 +14,22 @@ from qiskit.visualization import plot_state_qsphere
 from scipy.optimize import minimize
 from ClassicalSolver import lazy_greedy as lazy_greedy_imp
 
-
+# different ways of initializing the states
+# for more details, see https://doi.org/10.48550/arXiv.2108.08805
 INIT_TYPES = ["smoothened", "constant", "lazy greedy", "nonbiased"]
+
+# correspond to encoding correlations between neighbouring qubits (Copula) or not (Hourglass)
+# for more details, see https://doi.org/10.48550/arXiv.2108.08805
 SOLVING_TYPES = ["Copula", "Hourglass"]
 
 
+# general Superclass to reduce redundancy
 class Subcircuit:
 
+    # profits and weights are dictated by the Knapsack instance
+    # probs corresponds to the biases of each qubits, i.e. probs = [p_i | i = 0, ..., n - 1]
+    # thetas corresponds to the correlation between qubits - for more details see https://doi.org/10.48550/arXiv.2108.08805
+    # beta and gamma are the QAOA-typical parameters. There is only one of each since we use a circuit of depth 1
     def __init__(self, profits, weights, probs, thetas, gamma=None, beta=None):
         self.profits = profits
         self.weights = weights
@@ -31,13 +44,13 @@ class Subcircuit:
     def get_circuit(self):
         return self.circuit
         
-
+# corresponds to the gates which create the input states
 class InitializationGates(Subcircuit):
 
     def __init__(self, profits, weights, probs, thetas):
         super().__init__(profits, weights, probs, thetas)
 
-        # Qubits werden in den rotierten Eigenzuständen gemäß den WSKs p_i initiiert
+        # qubits are rotated so that they are in the superpositon states as described in https://doi.org/10.48550/arXiv.2108.08805
         for i in range(self.n_qubits):
             init = 2 * np.arccos(np.sqrt(1 - probs[i]))
             self.circuit.u(init, 0, 0, self.qubits[i])
@@ -47,23 +60,24 @@ class InitializationGates(Subcircuit):
         return self.circuit
 
 
+# corresponds to the energy-hamiltonian-evolution
 class CostGate(Subcircuit):
 
     def __init__(self, profits, weights, probs, thetas, gamma, beta):
         super().__init__(profits, weights, probs, thetas, gamma, beta)
 
-        # auf jeden Qubit wird der unitäre Operator korrespondierend zu den Kosten des aktuellen Zustands angewandt
+        # qubit-wise the phase-shift according to the respective item profit is applied
         for i in range(self.n_qubits):
             self.circuit.rz(self.gamma * profits[i] * 2, self.qubits[i])
         self.circuit.barrier()
 
-
+# correspond to the mixing-hamiltonian-evolution when encoding correlations
 class CopulaMixingGate(Subcircuit):
     
     def __init__(self, profits, weights, probs, thetas, gamma, beta):
         super().__init__(profits, weights, probs, thetas, gamma, beta)
 
-        # Liste von interagierenden bzw. zu verschränkenden Qubits erstellen
+        # generate list of indices of the qubits which will be entangled
         rng = list(range(self.n_qubits))
         indices = list(zip(rng[::2], rng[1::2]))
         rng.append(rng.pop(0))
@@ -74,23 +88,22 @@ class CopulaMixingGate(Subcircuit):
             p2 = self.probs[j]
             theta = self.thetas[i]
 
-            # Wahrscheinlichkeiten bestimmen
+            # calculate the probabilities corresponding to the pairwise distribution of qubits i and j
+            # for more details see https://doi.org/10.48550/arXiv.2108.08805
             p21 = p2 + theta * p2 * (1 - p1) * (1 - p2)
             p2_1 = p2 - theta * p1 * p2 * (1 - p2)
             phi_p1 = 2 * np.arcsin(np.sqrt(p1))
             phi_p21 = 2 * np.arcsin(np.sqrt(p21))
             phi_p2_1 = 2 * np.arcsin(np.sqrt(p2_1))
-            # Rotations-Circuit definieren
+            
+            # the 2-qubit-gate implementing the mixing-hamiltonian for qubits i and j 
             q_s = QuantumRegister(2)
             R_p12 = QuantumCircuit(q_s)
             R_p12.ry(phi_p1, 0)
-            # hier evtl cry-gate verwenden?
             R_p12.cu(phi_p21, 0, 0, 0, q_s[0], q_s[1])
             R_p12.x(0)
-            # hier ebenso
             R_p12.cu(phi_p2_1, 0, 0, 0, q_s[0], q_s[1])
             R_p12.x(0)
-            # Rotations-Circuits hintereinanderschalten
             self.circuit.barrier()
             self.circuit = self.circuit.compose(R_p12.inverse(), qubits=[i, j])
             self.circuit.rz(2 * self.beta, i)
@@ -98,21 +111,22 @@ class CopulaMixingGate(Subcircuit):
             self.circuit = self.circuit.compose(R_p12, qubits=[i, j])
             self.circuit.barrier()
 
-
+# correspond to the mixing-hamiltonian-evolution when not encoding correlations
 class HourglassMixingGate(Subcircuit):
     def __init__(self, profits, weights, probs, thetas, gamma, beta):
         super().__init__(profits, weights, probs, thetas, gamma, beta)
 
         for i in range(self.n_qubits):
+            # create the rotaton angle needed for implementing the single-qubit-mixing gate
             phi = 2 * np.arcsin(np.sqrt(self.probs[i]))
+            # implement the single-qubit-mixing-hamiltonian
             self.circuit.ry(phi, self.qubits[i]).inverse()
             self.circuit.rz(2 * self.beta, self.qubits[i])
             self.circuit.ry(phi, self.qubits[i])
 
-
+# class for composing the total circuit 
 class TotalCircuit(object):
 
-    # params: Parameter beta_i, gamma_i im Format[betas] + [gammas]
     def __init__(self, profits, weights, probs, thetas, params, type):
         self.profits = profits
         self.weights = weights
@@ -128,20 +142,23 @@ class TotalCircuit(object):
         args = [profits, weights, probs, thetas]
         self.init_circuit = InitializationGates(*args)
         self.cost_gates = [CostGate(*args + [self.gammas[i], self.betas[i]]).circuit for i in range(len(self.gammas))]
+        # define mixing-hamiltonians depending on solving type chosen
         if type == "Copula":
             self.mixing_gates = [CopulaMixingGate(*args + [self.gammas[i], self.betas[i]]).circuit for i in range(len(self.gammas))]
         else:
             self.mixing_gates = [HourglassMixingGate(*args + [self.gammas[i], self.betas[i]]).circuit for i in range(len(self.gammas))]
         self.rng = list(range(self.n_qubits))
         
-        # Initiierungsgates anwenden
+        # 
         self.circuit = self.circuit.compose(self.init_circuit.get_circuit(), qubits=self.rng)
 
-        # in p Durchgängen werden jeweils Cost- und Mixing-Unitary angewandt:
+        # applying energy- and mixing-hamiltonians according to the general QAOA scheme
+        # this is set up for general p, however we only use p = 1
         for i in range(self.p):
             self.circuit = self.circuit.compose(self.cost_gates[i], qubits=self.rng)
             self.circuit = self.circuit.compose(self.mixing_gates[i], qubits=self.rng)
 
+# class for implementing the biases used for the input states
 class Preprocessor(object):
 
     def __init__(self, items, max_weight, k):
@@ -155,6 +172,8 @@ class Preprocessor(object):
     def lazy_greedy(self):
         return lazy_greedy_imp(self.items, self.max_weight)
 
+    # create the bias-array according to the different bias-type chosen
+    # for details see https://doi.org/10.48550/arXiv.2108.08805
     def bitstring_to_probs(self, type):
         if type == "constant":
             return np.array([self.max_weight / sum(self.weights) for _ in range(self.n_qubits)])
@@ -174,7 +193,7 @@ class Preprocessor(object):
             print("Invalider Initialisierungstyp")
             return
 
-
+# class which wraps the quantum-part and also includes the post processing
 class Solver(object):
 
     def __init__(self, items, max_weight, thetas, solving_type, init_type, k):
@@ -192,32 +211,48 @@ class Solver(object):
         self.circuit = TotalCircuit(self.profits, self.weights, self.probs, self.thetas, params, self.solving_type)
         self.params_set = True
         
-
+    # create the quantum circuit and conducting the post-processing 
     def process_outcome(self):
         if not self.params_set:
             print("Parameter nicht initialisiert")
             return 
         copy_circuit = self.circuit.circuit.copy()
-        copy_circuit.measure_all(add_bits=False)
+        copy_circuit.measure_all(inplace=True)
         simulator = AerSimulator(method="matrix_product_state")
         tcirc = transpile(copy_circuit, simulator)
         result = simulator.run(tcirc, shots=self.circuit.n_qubits).result()
         job = result.get_counts(0)
-        result_strings = list(job.keys())
+        result_strings = list(map(lambda x: x.split(" ")[0], list(job.keys())))
         result_counts = np.array(list(job.values()))
-        # Stringformat in Int-array umwandeln
+        
+        # binary strings are transformed into bit-arrays
         result_intarrays = [np.array([int(c) for c in result_string]) for result_string in result_strings]
+       
+        # bit-arrays are transformed to corresponding total value
         result_profits = np.array([(np.array(self.profits) * result_intarray).sum() for result_intarray in result_intarrays])
+        
+        # same for weights
         result_weights = np.array([(np.array(self.weights) * result_intarray).sum() for result_intarray in result_intarrays])
+        
+        #bit-string is created which indiciates the valid solutions 
         result_weights_boolean = result_weights <= self.max_weight
+        
+        # profits corresponding to bit-strings with invalid total weights are dismissed
         result_profits_filtered = result_profits * result_weights_boolean
+        
+        # expected value of reamining results is calculated
         result_val_exp = result_profits_filtered * result_counts / result_counts.sum()
+        
+        # best outome is determined
         result_val_best = max(result_profits_filtered)
+        
+        # bit-strings corresponding to best outcomes are found out
         result_best_string = [result_strings[i] for i in range(len(result_strings)) if result_profits_filtered[i] == result_val_best]
 
         return {"exp_val": result_val_exp, "best_val": result_val_best, "best_string": result_best_string}
 
 
+# class which wraps the quantun-algorithm and performs it for all possible values of the QAOA-algorithm
 class GridSearcher(object):
     
     def __init__(self, items, max_weight, thetas, N_beta, N_gamma, p, solving_type, init_type, k=5):
@@ -230,6 +265,7 @@ class GridSearcher(object):
         self.p = p
         self.solver = Solver(*self.args + [solving_type, init_type, k])
 
+        # creates all possible tuples of beta and gamma values
         def generating_func(old_list, list, p):
             if p == 1:
                 return old_list
@@ -242,6 +278,7 @@ class GridSearcher(object):
         self.res = None
         self.best_result = None
 
+    # conduct algorithm for all possible parameter values
     def search_results(self):
         all_params_tuples = [(self.betas[i] + self.gammas[j], (i, j)) for i in range(len(self.betas)) for j in range(len(self.gammas))]
         res = {}
@@ -252,6 +289,7 @@ class GridSearcher(object):
         self.res = res
         return res
 
+    # find the best value and corresponding bit-string
     def get_max_result(self):
         if self.res is None:
             self.search_results()
@@ -260,13 +298,8 @@ class GridSearcher(object):
         best_bitstring = best_object["best_string"]
         best_val = best_object["best_val"]
         return best_bitstring, best_val
-        
 
-    def get_max_string(self):
-        max_val = self.get_max_result()
-        return list(map(lambda x: x[1][0], list(filter(lambda x: x[1][1] == max_val, self.res))))[0]
-
-
+# class for defining Knapsack items
 class Item(object):
 
     def __init__(self, id, profit, weight):

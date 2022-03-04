@@ -1,9 +1,26 @@
-#!/usr/bin/env python
+"""#!/usr/bin/env python 3"""
 # coding: utf-8
 
 import numpy as np
+from typing import List, Tuple
 
-def dynamic_programming(items, max_weight):
+# class for defining Knapsack items
+class Item(object):
+
+    def __init__(self, id, profit, weight):
+        self.id = id
+        self.profit = profit
+        self.weight = weight
+
+    def __str__(self) -> str:
+        first_line = "Object {}:".format(self.id)
+        second_line = "   - profit: {}".format(self.profit)
+        third_line = "   - weight: {}".format(self.weight)
+        return "\n".join([first_line, second_line, third_line])
+
+# returns optimal Knapsack solution for given Knapsack items
+# items are instances of the class Item which is defined in QAOASolver.py
+def dynamic_programming(items: List[Item], max_weight: int) -> int:
     profits = [item.profit for item in items]
     weights = [item.weight for item in items]
     R = np.zeros((len(profits) + 1, max_weight + 1))
@@ -15,8 +32,9 @@ def dynamic_programming(items, max_weight):
                 R[i][j] = R[i - 1][j]
     return R[len(profits)][max_weight]
 
-
-def lazy_greedy(items, max_weight):
+# returns lazy greedy Knapsack solution and index of last taken item for given Knapsack items
+# items are instances of the class Item which is defined in QAOASolver.py
+def lazy_greedy(items: List[Item], max_weight: int) -> Tuple[int, float]:
     profits = [item.profit for item in items]
     weights = [item.weight for item in items]
     new_items = [[i, profits[i], weights[i], profits[i] / weights[i], 0] for i in range(len(profits))]

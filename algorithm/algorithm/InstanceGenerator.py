@@ -1,6 +1,8 @@
 import numpy as np
+from typing import List, Tuple
 
-def create_instance(type, n, R, H=100):
+# creates Knapsack instances of different types as defined in https://doi.org/10.1016/j.cor.2004.03.002
+def create_instance(type: str, n: int, R: int, H: int =100) -> Tuple[List[int], List[int], List[int]]:
     types = ["uncor", "weak_cor", "strong_cor", "inv_str", "alm_str", "subset"]
     if type not in types:
         print("Eine der folgenden Parameter auswählen:")
@@ -23,7 +25,8 @@ def create_instance(type, n, R, H=100):
     max_weights = [int(h * 0.25 * sum(weights)) for h in range(2, 5)]
     return profits, weights, max_weights
 
-def create_and_write(type, n, R, H=100):
+#can save an instance to a file
+def create_and_write(type: str, n: int, R: int, H: int =100) -> None:
     profits, weights, max_weight = create_instance(type, n, R, H)
     with open("type={}n={}_input.txt".format(type, str(n)), "w") as f:
         f.write(str(profits))
