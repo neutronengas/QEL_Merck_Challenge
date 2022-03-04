@@ -10,30 +10,53 @@ The folder structure is as follows:
 README.md
 
 algorithm
-|--- algorithm\n
+
+|--- algorithm
+
 |	|--- ClassicalSolver.py: classical Knapsack algorithms
+
 |	|--- Example.py: contains example for the code and can be run
+
 |	|--- InstanceGenerator.py: function to create knapsack instances
+
 |	|--- QAOASolver.py: our quantum Knapsack algorithm
+
 |	|--- requirements.txt: requirements file
+
 |--- testing
+
 |	|--- Testresults.csv: contains data from test runs on created Knapsack instances
+
 |	|--- Testresults.xlsx: same data in Excel
 
 deliverables 
+
 |--- final deliverable: final deliverable as PDF
+
 |--- final presentation: final presentation as PDF
+
 |--- mid term pitch: mid term pitch as PDF
+
 |--- ideation: ideation presentation as PDF
 
 figma-designs: figma design as images
+
 |--- Screen1.jpg
+
 |--- Screen2.jpg
+
 |--- Screen3.jpg
+
 |--- Screen4.jpg
+
 |--- Screen5.jpg
+
 |--- Screen6.jpg
+
 |--- Screen7.jpg
+
 |--- Screen8.jpg
+
 |--- Screen9.jpg
+
 |--- Screen10.jpg
