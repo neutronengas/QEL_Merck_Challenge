@@ -10,7 +10,7 @@ The folder structure is as follows:
 README.md
 
 algorithm
-|--- algorithm
+|--- algorithm\n
 |	|--- ClassicalSolver.py: classical Knapsack algorithms
 |	|--- Example.py: contains example for the code and can be run
 |	|--- InstanceGenerator.py: function to create knapsack instances
